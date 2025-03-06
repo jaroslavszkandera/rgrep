@@ -1,3 +1,4 @@
+use regex::Regex;
 use std::error::Error;
 use std::fs;
 
@@ -6,6 +7,7 @@ pub struct Config {
     pub file_path: String,
     pub ignore_case: bool,
     pub line_regexp: bool,
+    pub word_regexp: bool,
 }
 
 impl Config {
@@ -14,41 +16,30 @@ impl Config {
 
         let mut ignore_case = false;
         let mut line_regexp = false;
+        let mut word_regexp = false;
         let mut query: Option<String> = None;
         let mut file_path: Option<String> = None;
 
         while let Some(arg) = args.next() {
-            if arg.starts_with("-") {
-                if arg == "-i" || arg == "--ignore-case" {
-                    ignore_case = true;
-                } else if arg == "-x" || arg == "--line-regexp" {
-                    line_regexp = true;
-                } else {
-                    return Err("Invalid option");
-                }
-            } else if query.is_none() {
-                query = Some(arg);
-            } else if file_path.is_none() {
-                file_path = Some(arg);
-            } else {
-                return Err("Too many arguments");
+            match arg.as_str() {
+                "-i" | "--ignore-case" => ignore_case = true,
+                "-x" | "--line-regexp" => line_regexp = true,
+                "-w" | "--word-regexp" => word_regexp = true,
+                _ if query.is_none() => query = Some(arg),
+                _ if file_path.is_none() => file_path = Some(arg),
+                _ => return Err("Invalid option or too many arguments"),
             }
         }
 
-        let query = match query {
-            Some(q) => q,
-            None => return Err("Didn't get a query string"),
-        };
-        let file_path = match file_path {
-            Some(fp) => fp,
-            None => return Err("Didn't get a file path"),
-        };
+        let query = query.ok_or("Didn't get a query string")?;
+        let file_path = file_path.ok_or("Didn't get a file path")?;
 
         Ok(Config {
             query,
             file_path,
             ignore_case,
             line_regexp,
+            word_regexp,
         })
     }
 }
@@ -60,6 +51,8 @@ pub fn run(config: Config) -> Result<(), Box<dyn Error>> {
         search_case_insensitive(&config.query, &contents)
     } else if config.line_regexp {
         search_line_regexp(&config.query, &contents)
+    } else if config.word_regexp {
+        search_word_regexp(&config.query, &contents)
     } else {
         search(&config.query, &contents)
     };
@@ -87,6 +80,15 @@ fn search_case_insensitive<'a>(query: &str, contents: &'a str) -> Vec<&'a str> {
 
 fn search_line_regexp<'a>(query: &str, contents: &'a str) -> Vec<&'a str> {
     contents.lines().filter(|line| *line == query).collect()
+}
+
+fn search_word_regexp<'a>(query: &str, contents: &'a str) -> Vec<&'a str> {
+    let regex = Regex::new(&format!(r"(?i)\b{}\b", regex::escape(query))).unwrap();
+
+    contents
+        .lines()
+        .filter(|line| regex.is_match(line))
+        .collect()
 }
 
 #[cfg(test)]
@@ -130,6 +132,21 @@ Meme.
 meme.";
 
         assert_eq!(vec!["me."], search_line_regexp(query, contents));
+    }
+
+    #[test]
+    fn word_regexp() {
+        let query = "me";
+        let contents = "\
+method
+Me me
+me.
+me";
+
+        assert_eq!(
+            vec!["Me me", "me.", "me"],
+            search_word_regexp(query, contents)
+        );
     }
 
     #[test]
