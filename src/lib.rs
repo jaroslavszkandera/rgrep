@@ -11,6 +11,7 @@ pub struct Config {
     pub word_regexp: bool,
     pub invert_match: bool,
     pub count_matches: bool,
+    pub line_number: bool,
     pub color: bool,
 }
 
@@ -23,6 +24,7 @@ impl Config {
         let mut word_regexp = false;
         let mut invert_match = false;
         let mut count_matches = false;
+        let mut line_number = false;
         let mut color = false;
         let mut query: Option<String> = None;
         let mut file_path: Option<String> = None;
@@ -32,8 +34,9 @@ impl Config {
                 "-i" | "--ignore-case" => ignore_case = true,
                 "-x" | "--line-regexp" => line_regexp = true,
                 "-w" | "--word-regexp" => word_regexp = true,
-                "-v" | "--invert_match" => invert_match = true,
+                "-v" | "--invert-match" => invert_match = true,
                 "-c" | "--count" => count_matches = true,
+                "-n" | "--line-number" => line_number = true,
                 "--color" => color = true,
                 _ if query.is_none() => query = Some(arg),
                 _ if file_path.is_none() => file_path = Some(arg),
@@ -52,6 +55,7 @@ impl Config {
             word_regexp,
             invert_match,
             count_matches,
+            line_number,
             color,
         })
     }
@@ -90,7 +94,7 @@ fn search(contents: &str, config: &Config) -> Vec<String> {
     let mut results = Vec::new();
     let mut match_count = 0;
 
-    for line in contents.lines() {
+    for (index, line) in contents.lines().enumerate() {
         let is_match = regex.is_match(line);
         if config.invert_match ^ is_match {
             if config.count_matches {
@@ -98,17 +102,18 @@ fn search(contents: &str, config: &Config) -> Vec<String> {
                 continue;
             }
 
+            let mut fmt_line = line.to_string();
             if config.color {
-                results.push(
-                    regex
-                        .replace_all(line, |caps: &regex::Captures| {
-                            caps[0].red().bold().to_string()
-                        })
-                        .to_string(),
-                );
-            } else {
-                results.push(line.to_string());
+                fmt_line = regex
+                    .replace_all(line, |caps: &regex::Captures| {
+                        caps[0].red().bold().to_string()
+                    })
+                    .to_string();
             }
+            if config.line_number {
+                fmt_line = format!("{}:{}", index + 1, fmt_line);
+            }
+            results.push(fmt_line);
         }
     }
 
@@ -122,18 +127,25 @@ fn search(contents: &str, config: &Config) -> Vec<String> {
 mod tests {
     use super::*;
 
-    #[test]
-    fn case_sensitive_search() {
-        let config = Config {
-            query: "duct".to_string(),
-            file_path: "".to_string(),
+    fn base_config() -> Config {
+        Config {
+            query: String::new(),
+            file_path: String::new(),
             ignore_case: false,
             line_regexp: false,
             word_regexp: false,
             invert_match: false,
             count_matches: false,
+            line_number: false,
             color: false,
-        };
+        }
+    }
+
+    #[test]
+    fn case_sensitive_search() {
+        let mut config = base_config();
+        config.query = "duct".to_string();
+        config.file_path = "".to_string();
         let contents = "Rust:\nsafe, fast, productive.\nsafe and fast.";
         let results = search(contents, &config);
         assert_eq!(results, vec!["safe, fast, productive.".to_string()]);
@@ -141,16 +153,9 @@ mod tests {
 
     #[test]
     fn case_insensitive_search() {
-        let config = Config {
-            query: "rUsT".to_string(),
-            file_path: "".to_string(),
-            ignore_case: true,
-            line_regexp: false,
-            word_regexp: false,
-            invert_match: false,
-            count_matches: false,
-            color: false,
-        };
+        let mut config = base_config();
+        config.query = "rUsT".to_string();
+        config.ignore_case = true;
         let contents = "Rust:\nTrust me.";
         let results = search(contents, &config);
         assert_eq!(results, vec!["Rust:".to_string(), "Trust me.".to_string()]);
@@ -158,16 +163,9 @@ mod tests {
 
     #[test]
     fn word_regexp_search() {
-        let config = Config {
-            query: "me".to_string(),
-            file_path: "".to_string(),
-            ignore_case: false,
-            line_regexp: false,
-            word_regexp: true,
-            invert_match: false,
-            count_matches: false,
-            color: false,
-        };
+        let mut config = base_config();
+        config.query = "me".to_string();
+        config.word_regexp = true;
         let contents = "Me me\nme.\nmethod";
         let results = search(contents, &config);
         assert_eq!(results, vec!["Me me".to_string(), "me.".to_string()]);
@@ -175,16 +173,9 @@ mod tests {
 
     #[test]
     fn line_regex_search() {
-        let config = Config {
-            query: "Rusty".to_string(),
-            file_path: "".to_string(),
-            ignore_case: false,
-            line_regexp: true,
-            word_regexp: false,
-            invert_match: false,
-            count_matches: false,
-            color: false,
-        };
+        let mut config = base_config();
+        config.query = "Rusty".to_string();
+        config.line_regexp = true;
         let contents = "Rust\nRusty\nRusty \nCorosive";
         let results = search(contents, &config);
         assert_eq!(results, vec!["Rusty".to_string()]);
