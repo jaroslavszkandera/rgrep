@@ -10,6 +10,7 @@ pub struct Config {
     pub line_regexp: bool,
     pub word_regexp: bool,
     pub invert_match: bool,
+    pub count_matches: bool,
     pub color: bool,
 }
 
@@ -21,6 +22,7 @@ impl Config {
         let mut line_regexp = false;
         let mut word_regexp = false;
         let mut invert_match = false;
+        let mut count_matches = false;
         let mut color = false;
         let mut query: Option<String> = None;
         let mut file_path: Option<String> = None;
@@ -31,6 +33,7 @@ impl Config {
                 "-x" | "--line-regexp" => line_regexp = true,
                 "-w" | "--word-regexp" => word_regexp = true,
                 "-v" | "--invert_match" => invert_match = true,
+                "-c" | "--count" => count_matches = true,
                 "--color" => color = true,
                 _ if query.is_none() => query = Some(arg),
                 _ if file_path.is_none() => file_path = Some(arg),
@@ -48,6 +51,7 @@ impl Config {
             line_regexp,
             word_regexp,
             invert_match,
+            count_matches,
             color,
         })
     }
@@ -74,23 +78,44 @@ fn build_regex(config: &Config) -> Regex {
 
 pub fn run(config: &Config) -> Result<(), Box<dyn Error>> {
     let contents = fs::read_to_string(&config.file_path)?;
+    let results = search(&contents, config);
+    for line in results {
+        println!("{}", line);
+    }
+    Ok(())
+}
+
+fn search(contents: &str, config: &Config) -> Vec<String> {
     let regex = build_regex(config);
+    let mut results = Vec::new();
+    let mut match_count = 0;
 
     for line in contents.lines() {
         let is_match = regex.is_match(line);
         if config.invert_match ^ is_match {
+            if config.count_matches {
+                match_count += 1;
+                continue;
+            }
+
             if config.color {
-                let highlighted = regex.replace_all(line, |caps: &regex::Captures| {
-                    caps[0].red().bold().to_string()
-                });
-                println!("{}", highlighted);
+                results.push(
+                    regex
+                        .replace_all(line, |caps: &regex::Captures| {
+                            caps[0].red().bold().to_string()
+                        })
+                        .to_string(),
+                );
             } else {
-                println!("{}", line);
+                results.push(line.to_string());
             }
         }
     }
 
-    Ok(())
+    if config.count_matches {
+        results.push(match_count.to_string());
+    }
+    results
 }
 
 #[cfg(test)]
@@ -98,7 +123,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn case_sensitive() {
+    fn case_sensitive_search() {
         let config = Config {
             query: "duct".to_string(),
             file_path: "".to_string(),
@@ -106,15 +131,16 @@ mod tests {
             line_regexp: false,
             word_regexp: false,
             invert_match: false,
+            count_matches: false,
             color: false,
         };
-        let regex = build_regex(&config);
-        assert!(regex.is_match("safe, fast, productive."));
-        assert!(!regex.is_match("safe and fast."));
+        let contents = "Rust:\nsafe, fast, productive.\nsafe and fast.";
+        let results = search(contents, &config);
+        assert_eq!(results, vec!["safe, fast, productive.".to_string()]);
     }
 
     #[test]
-    fn case_insensitive() {
+    fn case_insensitive_search() {
         let config = Config {
             query: "rUsT".to_string(),
             file_path: "".to_string(),
@@ -122,32 +148,16 @@ mod tests {
             line_regexp: false,
             word_regexp: false,
             invert_match: false,
+            count_matches: false,
             color: false,
         };
-        let regex = build_regex(&config);
-        assert!(regex.is_match("Rust:"));
-        assert!(regex.is_match("Trust me."));
+        let contents = "Rust:\nTrust me.";
+        let results = search(contents, &config);
+        assert_eq!(results, vec!["Rust:".to_string(), "Trust me.".to_string()]);
     }
 
     #[test]
-    fn line_regexp() {
-        let config = Config {
-            query: "me.".to_string(),
-            file_path: "".to_string(),
-            ignore_case: false,
-            line_regexp: true,
-            word_regexp: false,
-            invert_match: false,
-            color: false,
-        };
-        let regex = build_regex(&config);
-        assert!(regex.is_match("me."));
-        assert!(!regex.is_match("meme."));
-        assert!(!regex.is_match("Meme."));
-    }
-
-    #[test]
-    fn word_regexp() {
+    fn word_regexp_search() {
         let config = Config {
             query: "me".to_string(),
             file_path: "".to_string(),
@@ -155,11 +165,28 @@ mod tests {
             line_regexp: false,
             word_regexp: true,
             invert_match: false,
+            count_matches: false,
             color: false,
         };
-        let regex = build_regex(&config);
-        assert!(regex.is_match("Me me"));
-        assert!(regex.is_match("me."));
-        assert!(!regex.is_match("method"));
+        let contents = "Me me\nme.\nmethod";
+        let results = search(contents, &config);
+        assert_eq!(results, vec!["Me me".to_string(), "me.".to_string()]);
+    }
+
+    #[test]
+    fn line_regex_search() {
+        let config = Config {
+            query: "Rusty".to_string(),
+            file_path: "".to_string(),
+            ignore_case: false,
+            line_regexp: true,
+            word_regexp: false,
+            invert_match: false,
+            count_matches: false,
+            color: false,
+        };
+        let contents = "Rust\nRusty\nRusty \nCorosive";
+        let results = search(contents, &config);
+        assert_eq!(results, vec!["Rusty".to_string()]);
     }
 }
