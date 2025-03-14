@@ -102,7 +102,11 @@ pub fn run(config: &Config) -> Result<(), Box<dyn Error>> {
                 if let Ok(contents) = fs::read_to_string(&path) {
                     let results = search(&contents, config, regex.clone());
                     for line in results {
-                        println!("{}:{}", path, line);
+                        if config.color {
+                            println!("{}:{}", path.purple(), line);
+                        } else {
+                            println!("{}:{}", path, line);
+                        }
                     }
                 }
             }
@@ -138,7 +142,7 @@ fn search(contents: &str, config: &Config, regex: Regex) -> Vec<String> {
                     .to_string();
             }
             if config.line_number {
-                fmt_line = format!("{}:{}", index + 1, fmt_line);
+                fmt_line = format!("{}:{}", (index + 1).to_string().green(), fmt_line);
             }
             results.push(fmt_line);
         }
