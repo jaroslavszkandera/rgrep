@@ -7,13 +7,17 @@ use walkdir::WalkDir;
 pub struct Config {
     pub query: String,
     pub file_path: String,
+    // Matching Control
     pub ignore_case: bool,
-    pub line_regexp: bool,
-    pub word_regexp: bool,
     pub invert_match: bool,
+    pub word_regexp: bool,
+    pub line_regexp: bool,
+    // General Output Control
     pub count_matches: bool,
-    pub line_number: bool,
     pub color: bool,
+    // Output Line Prefix Control
+    pub line_number: bool,
+    // File and Directory Selection
     pub recursive: bool,
 }
 
@@ -22,9 +26,10 @@ impl Config {
         args.next();
 
         let mut ignore_case = false;
-        let mut line_regexp = false;
-        let mut word_regexp = false;
+        let mut no_ignore_case = false;
         let mut invert_match = false;
+        let mut word_regexp = false;
+        let mut line_regexp = false;
         let mut count_matches = false;
         let mut line_number = false;
         let mut color = false;
@@ -35,17 +40,22 @@ impl Config {
         while let Some(arg) = args.next() {
             match arg.as_str() {
                 "-i" | "--ignore-case" => ignore_case = true,
-                "-x" | "--line-regexp" => line_regexp = true,
-                "-w" | "--word-regexp" => word_regexp = true,
+                "--no-ignore-case" => no_ignore_case = true,
                 "-v" | "--invert-match" => invert_match = true,
+                "-w" | "--word-regexp" => word_regexp = true,
+                "-x" | "--line-regexp" => line_regexp = true,
                 "-c" | "--count" => count_matches = true,
-                "-n" | "--line-number" => line_number = true,
                 "--color" => color = true,
+                "-n" | "--line-number" => line_number = true,
                 "-r" | "--recursive" => recursive = true,
                 _ if query.is_none() => query = Some(arg),
                 _ if file_path.is_none() => file_path = Some(arg),
                 _ => return Err("Invalid option or too many arguments"),
             }
+        }
+
+        if no_ignore_case {
+            invert_match = false;
         }
 
         let query = query.ok_or("Didn't get a query string")?;
