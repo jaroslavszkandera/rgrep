@@ -19,6 +19,10 @@ pub struct Config {
     pub line_number: bool,
     // File and Directory Selection
     pub recursive: bool,
+    // Context Line Control
+    pub after_context: usize,
+    pub before_context: usize,
+    pub group_separator: String,
 }
 
 impl Config {
@@ -36,6 +40,14 @@ impl Config {
         let mut recursive = false;
         let mut query: Option<String> = None;
         let mut file_path: Option<String> = None;
+        let mut after_context = 0;
+        let mut before_context = 0;
+        let mut group_separator = "--".to_string();
+        let mut no_group_separator = false;
+
+        fn parse_opt_val(arg: &str) -> Option<String> {
+            arg.split_once('=').map(|(_, v)| v.to_string())
+        }
 
         while let Some(arg) = args.next() {
             match arg.as_str() {
@@ -48,6 +60,35 @@ impl Config {
                 "--color" => color = true,
                 "-n" | "--line-number" => line_number = true,
                 "-r" | "--recursive" => recursive = true,
+                "-A" => after_context = args.next().and_then(|s| s.parse().ok()).unwrap_or(0),
+                "-B" => before_context = args.next().and_then(|s| s.parse().ok()).unwrap_or(0),
+                "-C" => {
+                    let num = args.next().and_then(|s| s.parse().ok()).unwrap_or(0);
+                    before_context = num;
+                    after_context = num;
+                }
+
+                _ if arg.starts_with("--after-context") => {
+                    after_context = parse_opt_val(&arg)
+                        .and_then(|s| s.parse().ok())
+                        .ok_or("Invalid context length argument")?;
+                }
+                _ if arg.starts_with("--before-context") => {
+                    before_context = parse_opt_val(&arg)
+                        .and_then(|s| s.parse().ok())
+                        .ok_or("Invalid context length argument")?;
+                }
+                _ if arg.starts_with("--context") => {
+                    let num = parse_opt_val(&arg)
+                        .and_then(|s| s.parse().ok())
+                        .ok_or("Invalid context length argument")?;
+                    before_context = num;
+                    after_context = num;
+                }
+                _ if arg.starts_with("--group_separator") => {
+                    group_separator = parse_opt_val(&arg).unwrap_or("--".to_string())
+                }
+                "--no_group_separator" => no_group_separator = true,
                 _ if query.is_none() => query = Some(arg),
                 _ if file_path.is_none() => file_path = Some(arg),
                 _ => return Err("Invalid option or too many arguments"),
@@ -56,6 +97,9 @@ impl Config {
 
         if no_ignore_case {
             invert_match = false;
+        }
+        if no_group_separator {
+            group_separator.clear();
         }
 
         let query = query.ok_or("Didn't get a query string")?;
@@ -76,6 +120,9 @@ impl Config {
             line_number,
             color,
             recursive,
+            after_context,
+            before_context,
+            group_separator,
         })
     }
 }
@@ -159,7 +206,7 @@ fn search(contents: &str, config: &Config, regex: Regex) -> Vec<String> {
     }
 
     if config.count_matches {
-        results.push(match_count.to_string());
+        return vec![match_count.to_string()];
     }
     results
 }
@@ -180,6 +227,9 @@ mod tests {
             line_number: false,
             color: false,
             recursive: false,
+            after_context: 0,
+            before_context: 0,
+            group_separator: "--".to_string(),
         }
     }
 
