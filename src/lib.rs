@@ -160,7 +160,7 @@ pub fn run(config: &Config) -> Result<(), Box<dyn Error>> {
                     let results = search(&contents, config, regex.clone());
                     for line in results {
                         if config.color {
-                            println!("{}:{}", path.purple(), line);
+                            println!("{}{}{}", path.purple(), ":".cyan(), line);
                         } else {
                             println!("{}:{}", path, line);
                         }
@@ -181,13 +181,43 @@ pub fn run(config: &Config) -> Result<(), Box<dyn Error>> {
 fn search(contents: &str, config: &Config, regex: Regex) -> Vec<String> {
     let mut results = Vec::new();
     let mut match_count = 0;
+    let lines: Vec<&str> = contents.lines().collect();
+    let mut after_context_cnt = 0;
+    let mut last_match_index = 0;
 
-    for (index, line) in contents.lines().enumerate() {
+    for (index, line) in lines.iter().enumerate() {
         let is_match = regex.is_match(line);
-        if config.invert_match ^ is_match {
+        if config.invert_match ^ is_match || after_context_cnt > 0 {
             if config.count_matches {
                 match_count += 1;
                 continue;
+            }
+
+            if config.before_context > 0 && after_context_cnt == 0 {
+                let start = index
+                    .saturating_sub(config.before_context)
+                    .max(last_match_index + config.after_context);
+                if start <= (last_match_index + config.after_context) {
+                    results.pop();
+                }
+                for i in start..index {
+                    if config.line_number {
+                        results.push(format!(
+                            "{}{}{}",
+                            (i + 1).to_string().green(),
+                            ":".cyan(),
+                            lines[i]
+                        ));
+                    } else {
+                        results.push(lines[i].to_string());
+                    }
+                }
+            }
+
+            if config.invert_match ^ is_match {
+                after_context_cnt = config.after_context;
+            } else {
+                after_context_cnt -= 1;
             }
 
             let mut fmt_line = line.to_string();
@@ -199,16 +229,31 @@ fn search(contents: &str, config: &Config, regex: Regex) -> Vec<String> {
                     .to_string();
             }
             if config.line_number {
-                fmt_line = format!("{}:{}", (index + 1).to_string().green(), fmt_line);
+                fmt_line = format!(
+                    "{}{}{}",
+                    (index + 1).to_string().green(),
+                    ":".cyan(),
+                    fmt_line
+                );
             }
             results.push(fmt_line);
+
+            if after_context_cnt == 0 && (config.after_context > 0 || config.before_context > 0) {
+                if config.color {
+                    results.push(config.group_separator.cyan().to_string());
+                } else {
+                    results.push(config.group_separator.to_string());
+                }
+            }
+            last_match_index = index;
         }
     }
 
     if config.count_matches {
-        return vec![match_count.to_string()];
+        vec![match_count.to_string()]
+    } else {
+        results
     }
-    results
 }
 
 #[cfg(test)]
