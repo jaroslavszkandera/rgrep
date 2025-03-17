@@ -49,6 +49,7 @@ impl Config {
             arg.split_once('=').map(|(_, v)| v.to_string())
         }
 
+        // TODO: Parse multiple options after dash (e.g. -in).
         while let Some(arg) = args.next() {
             match arg.as_str() {
                 "-i" | "--ignore-case" => ignore_case = true,
@@ -157,20 +158,16 @@ pub fn run(config: &Config) -> Result<(), Box<dyn Error>> {
             if entry.file_type().is_file() {
                 let path = entry.path().display().to_string();
                 if let Ok(contents) = fs::read_to_string(&path) {
-                    let results = search(&contents, config, &regex);
+                    let results = search(&contents, config, &regex, &path);
                     for line in results {
-                        if config.color {
-                            println!("{}{}{}", path.purple(), ":".cyan(), line);
-                        } else {
-                            println!("{}:{}", path, line);
-                        }
+                        println!("{}", line);
                     }
                 }
             }
         }
     } else {
         let contents = fs::read_to_string(&config.file_path)?;
-        let results = search(&contents, config, &regex);
+        let results = search(&contents, config, &regex, &"".to_string());
         for line in results {
             println!("{}", line);
         }
@@ -178,7 +175,7 @@ pub fn run(config: &Config) -> Result<(), Box<dyn Error>> {
     Ok(())
 }
 
-fn search(contents: &str, config: &Config, regex: &Regex) -> Vec<String> {
+fn search(contents: &str, config: &Config, regex: &Regex, file_path: &str) -> Vec<String> {
     let mut results = Vec::new();
     let mut match_count = 0;
     let lines: Vec<&str> = contents.lines().collect();
@@ -198,17 +195,17 @@ fn search(contents: &str, config: &Config, regex: &Regex) -> Vec<String> {
                     .saturating_sub(config.before_context)
                     .max(last_match_index + config.after_context);
                 if start <= (last_match_index + config.after_context) {
-                    results.pop();
+                    results.pop(); // Remove previous separator
                 }
                 for i in start..index {
-                    results.push(format_line(i, &lines[i], config));
+                    results.push(format_line(i, &lines[i], config, &file_path));
                 }
             }
 
             if config.invert_match ^ is_match {
                 after_context_cnt = config.after_context;
             } else {
-                after_context_cnt -= 1;
+                after_context_cnt = after_context_cnt.saturating_sub(1);
             }
 
             let mut fmt_line = line.to_string();
@@ -219,7 +216,7 @@ fn search(contents: &str, config: &Config, regex: &Regex) -> Vec<String> {
                     })
                     .to_string();
             }
-            results.push(format_line(index, &fmt_line, config));
+            results.push(format_line(index, &fmt_line, config, &file_path));
 
             if after_context_cnt == 0 && (config.after_context > 0 || config.before_context > 0) {
                 if config.color {
@@ -239,16 +236,31 @@ fn search(contents: &str, config: &Config, regex: &Regex) -> Vec<String> {
     }
 }
 
-fn format_line(index: usize, line: &str, config: &Config) -> String {
+fn format_line(index: usize, line: &str, config: &Config, file_path: &str) -> String {
+    let mut fmt_line = "".to_string();
+    if config.recursive {
+        if config.color {
+            fmt_line = format!("{}{}", file_path.purple(), ":".cyan());
+        } else {
+            fmt_line = format!("{}:", file_path);
+        }
+    }
     if config.line_number {
         if config.color {
-            format!("{}{}{}", (index + 1).to_string().green(), ":".cyan(), line)
+            fmt_line = format!(
+                "{}{}{}{}",
+                fmt_line,
+                (index + 1).to_string().green(),
+                ":".cyan(),
+                line
+            );
         } else {
-            format!("{}{}{}", (index + 1).to_string(), ":", line)
+            fmt_line = format!("{}{}:{}", fmt_line, (index + 1).to_string(), line);
         }
     } else {
-        line.to_string()
+        fmt_line = format!("{}{}", fmt_line, line.to_string());
     }
+    fmt_line
 }
 
 #[cfg(test)]
@@ -279,7 +291,7 @@ mod tests {
         config.query = "duct".to_string();
         config.file_path = "".to_string();
         let contents = "Rust:\nsafe, fast, productive.\nsafe and fast.";
-        let results = search(contents, &config, &build_regex(&config));
+        let results = search(contents, &config, &build_regex(&config), &"".to_string());
         assert_eq!(results, vec!["safe, fast, productive.".to_string()]);
     }
 
@@ -289,7 +301,7 @@ mod tests {
         config.query = "rUsT".to_string();
         config.ignore_case = true;
         let contents = "Rust:\nTrust me.";
-        let results = search(contents, &config, &build_regex(&config));
+        let results = search(contents, &config, &build_regex(&config), &"".to_string());
         assert_eq!(results, vec!["Rust:".to_string(), "Trust me.".to_string()]);
     }
 
@@ -299,7 +311,7 @@ mod tests {
         config.query = "me".to_string();
         config.word_regexp = true;
         let contents = "Me me\nme.\nmethod";
-        let results = search(contents, &config, &build_regex(&config));
+        let results = search(contents, &config, &build_regex(&config), &"".to_string());
         assert_eq!(results, vec!["Me me".to_string(), "me.".to_string()]);
     }
 
@@ -309,7 +321,7 @@ mod tests {
         config.query = "Rusty".to_string();
         config.line_regexp = true;
         let contents = "Rust\nRusty\nRusty \nCorosive";
-        let results = search(contents, &config, &build_regex(&config));
+        let results = search(contents, &config, &build_regex(&config), &"".to_string());
         assert_eq!(results, vec!["Rusty".to_string()]);
     }
 }
