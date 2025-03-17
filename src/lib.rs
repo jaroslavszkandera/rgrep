@@ -149,6 +149,7 @@ fn build_regex(config: &Config) -> Regex {
 
 pub fn run(config: &Config) -> Result<(), Box<dyn Error>> {
     let regex = build_regex(config);
+    let mut needs_separator = false;
 
     if config.recursive {
         for entry in WalkDir::new(&config.file_path)
@@ -158,7 +159,7 @@ pub fn run(config: &Config) -> Result<(), Box<dyn Error>> {
             if entry.file_type().is_file() {
                 let path = entry.path().display().to_string();
                 if let Ok(contents) = fs::read_to_string(&path) {
-                    let results = search(&contents, config, &regex, &path);
+                    let results = search(&contents, config, &regex, &path, &mut needs_separator);
                     for line in results {
                         println!("{}", line);
                     }
@@ -167,7 +168,7 @@ pub fn run(config: &Config) -> Result<(), Box<dyn Error>> {
         }
     } else {
         let contents = fs::read_to_string(&config.file_path)?;
-        let results = search(&contents, config, &regex, &"".to_string());
+        let results = search(&contents, config, &regex, &"".to_string(), &mut false);
         for line in results {
             println!("{}", line);
         }
@@ -175,7 +176,13 @@ pub fn run(config: &Config) -> Result<(), Box<dyn Error>> {
     Ok(())
 }
 
-fn search(contents: &str, config: &Config, regex: &Regex, file_path: &str) -> Vec<String> {
+fn search(
+    contents: &str,
+    config: &Config,
+    regex: &Regex,
+    file_path: &str,
+    needs_separator: &mut bool,
+) -> Vec<String> {
     let mut results = Vec::new();
     let mut match_count = 0;
     let lines: Vec<&str> = contents.lines().collect();
@@ -189,6 +196,18 @@ fn search(contents: &str, config: &Config, regex: &Regex, file_path: &str) -> Ve
                 match_count += 1;
                 continue;
             }
+
+            if *needs_separator
+                && after_context_cnt == 0
+                && (config.after_context > 0 || config.before_context > 0)
+            {
+                if config.color {
+                    results.push(config.group_separator.cyan().to_string());
+                } else {
+                    results.push(config.group_separator.to_string());
+                }
+            }
+            *needs_separator = true;
 
             if config.before_context > 0 && after_context_cnt == 0 {
                 let start = index
@@ -218,13 +237,6 @@ fn search(contents: &str, config: &Config, regex: &Regex, file_path: &str) -> Ve
             }
             results.push(format_line(index, &fmt_line, config, &file_path));
 
-            if after_context_cnt == 0 && (config.after_context > 0 || config.before_context > 0) {
-                if config.color {
-                    results.push(config.group_separator.cyan().to_string());
-                } else {
-                    results.push(config.group_separator.to_string());
-                }
-            }
             last_match_index = index;
         }
     }
@@ -291,7 +303,13 @@ mod tests {
         config.query = "duct".to_string();
         config.file_path = "".to_string();
         let contents = "Rust:\nsafe, fast, productive.\nsafe and fast.";
-        let results = search(contents, &config, &build_regex(&config), &"".to_string());
+        let results = search(
+            contents,
+            &config,
+            &build_regex(&config),
+            &"".to_string(),
+            &mut false,
+        );
         assert_eq!(results, vec!["safe, fast, productive.".to_string()]);
     }
 
@@ -301,7 +319,13 @@ mod tests {
         config.query = "rUsT".to_string();
         config.ignore_case = true;
         let contents = "Rust:\nTrust me.";
-        let results = search(contents, &config, &build_regex(&config), &"".to_string());
+        let results = search(
+            contents,
+            &config,
+            &build_regex(&config),
+            &"".to_string(),
+            &mut false,
+        );
         assert_eq!(results, vec!["Rust:".to_string(), "Trust me.".to_string()]);
     }
 
@@ -311,7 +335,13 @@ mod tests {
         config.query = "me".to_string();
         config.word_regexp = true;
         let contents = "Me me\nme.\nmethod";
-        let results = search(contents, &config, &build_regex(&config), &"".to_string());
+        let results = search(
+            contents,
+            &config,
+            &build_regex(&config),
+            &"".to_string(),
+            &mut false,
+        );
         assert_eq!(results, vec!["Me me".to_string(), "me.".to_string()]);
     }
 
@@ -321,7 +351,13 @@ mod tests {
         config.query = "Rusty".to_string();
         config.line_regexp = true;
         let contents = "Rust\nRusty\nRusty \nCorosive";
-        let results = search(contents, &config, &build_regex(&config), &"".to_string());
+        let results = search(
+            contents,
+            &config,
+            &build_regex(&config),
+            &"".to_string(),
+            &mut false,
+        );
         assert_eq!(results, vec!["Rusty".to_string()]);
     }
 }
