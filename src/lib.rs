@@ -217,7 +217,7 @@ fn search(
                     results.pop(); // Remove previous separator
                 }
                 for i in start..index {
-                    results.push(format_line(i, &lines[i], config, &file_path));
+                    results.push(format_line(i, &lines[i], config, &file_path, is_match));
                 }
             }
 
@@ -235,7 +235,7 @@ fn search(
                     })
                     .to_string();
             }
-            results.push(format_line(index, &fmt_line, config, &file_path));
+            results.push(format_line(index, &fmt_line, config, &file_path, is_match));
 
             last_match_index = index;
         }
@@ -248,29 +248,30 @@ fn search(
     }
 }
 
-fn format_line(index: usize, line: &str, config: &Config, file_path: &str) -> String {
-    let mut fmt_line = "".to_string();
-    if config.recursive {
-        if config.color {
-            fmt_line = format!("{}{}", file_path.purple(), ":".cyan());
-        } else {
-            fmt_line = format!("{}:", file_path);
-        }
+fn format_line(
+    index: usize,
+    line: &str,
+    config: &Config,
+    file_path: &str,
+    is_match: bool,
+) -> String {
+    let mut fmt_line = line.to_string();
+    let mut fmt_delimiter = if is_match { ":" } else { "-" }.white();
+    let mut fmt_file_path = file_path.white();
+    let mut fmt_index = (index + 1).to_string().white();
+    if config.color {
+        fmt_delimiter = fmt_delimiter.cyan();
+        fmt_file_path = fmt_file_path.purple();
+        fmt_index = fmt_index.green();
     }
     if config.line_number {
-        if config.color {
-            fmt_line = format!(
-                "{}{}{}{}",
-                fmt_line,
-                (index + 1).to_string().green(),
-                ":".cyan(),
-                line
-            );
-        } else {
-            fmt_line = format!("{}{}:{}", fmt_line, (index + 1).to_string(), line);
-        }
-    } else {
-        fmt_line = format!("{}{}", fmt_line, line.to_string());
+        fmt_line.insert_str(0, &format!("{}{}", fmt_index, fmt_delimiter).to_string());
+    }
+    if config.recursive {
+        fmt_line.insert_str(
+            0,
+            &format!("{}{}", fmt_file_path, fmt_delimiter).to_string(),
+        );
     }
     fmt_line
 }
